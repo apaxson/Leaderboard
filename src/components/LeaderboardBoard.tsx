@@ -5,6 +5,11 @@ import type { BoardCategory, BoardGame, BoardPayload } from "@/lib/types";
 
 const REFRESH_MS = 20_000;
 const FETCH_TIMEOUT_MS = 10_000;
+const ROTATE_MS = 10_000;
+// Max games shown at once per category. Table Games (5) and Card Games (3)
+// never exceed this, so they never rotate; Pinball grows dynamically as
+// machines are played, so once it passes this it starts paging.
+const GAMES_PER_PAGE = 5;
 // Kiosk browsers run for weeks at a time; forcing a full page reload once a
 // day at an off-peak hour bounds any memory/DOM growth the tab accumulates,
 // independent of how careful the polling code below is.
@@ -84,26 +89,72 @@ function GameCard({ game }: { game: BoardGame }) {
   );
 }
 
-function CategoryBlock({ category }: { category: BoardCategory }) {
+// Buffer added on top of the logo's measured width, so cards don't butt
+// right up against it.
+const LOGO_RESERVE_GAP_PX = 24;
+// Conservative guess used for the first paint, before the logo has loaded
+// and been measured -- refined immediately after via ResizeObserver.
+const LOGO_RESERVE_FALLBACK_PX = 360;
+
+function CategoryBlock({
+  category,
+  cornerReservePx,
+  rotationTick,
+}: {
+  category: BoardCategory;
+  /** When set, reserves this many px on the right so content flows around
+   * the logo overlaid in that corner instead of running underneath it. */
+  cornerReservePx?: number;
+  /** Increments every ROTATE_MS; drives which page of games is shown when
+   * a category has more games than fit on screen at once. */
+  rotationTick: number;
+}) {
+  const headerPaddingRight = cornerReservePx ?? 24;
+  const gridPaddingRight = cornerReservePx ?? 16;
+
+  const totalPages = Math.max(1, Math.ceil(category.games.length / GAMES_PER_PAGE));
+  const page = rotationTick % totalPages;
+  const visibleGames =
+    totalPages > 1
+      ? category.games.slice(page * GAMES_PER_PAGE, page * GAMES_PER_PAGE + GAMES_PER_PAGE)
+      : category.games;
+
   return (
     <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
-      <header className="flex shrink-0 items-center gap-3 border-b border-white/10 px-6 py-3">
+      <header
+        className="flex shrink-0 items-center gap-3 border-b border-white/10 py-3 pl-6"
+        style={{ paddingRight: headerPaddingRight }}
+      >
         <span className={`h-3.5 w-3.5 shrink-0 rounded-full ${accentFor(category.slug)}`} />
         <h2 className="text-2xl font-extrabold uppercase tracking-tight text-white md:text-3xl">
           {category.name}
         </h2>
+        {totalPages > 1 && (
+          <span className="ml-auto flex shrink-0 items-center gap-1.5">
+            {Array.from({ length: totalPages }, (_, i) => (
+              <span
+                key={i}
+                className={`h-1.5 w-1.5 rounded-full transition-colors ${
+                  i === page ? "bg-white" : "bg-white/20"
+                }`}
+              />
+            ))}
+          </span>
+        )}
       </header>
       <div
-        className="grid flex-1 gap-3 p-4"
+        key={page}
+        className="game-page grid flex-1 gap-3 pt-4 pb-4 pl-4"
         style={{
           gridTemplateColumns: `repeat(auto-fit, minmax(200px, 1fr))`,
           gridAutoRows: "1fr",
+          paddingRight: gridPaddingRight,
         }}
       >
-        {category.games.length === 0 ? (
+        {visibleGames.length === 0 ? (
           <p className="flex items-center justify-center text-slate-500">No games yet</p>
         ) : (
-          category.games.map((game) => <GameCard key={game.id} game={game} />)
+          visibleGames.map((game) => <GameCard key={game.id} game={game} />)
         )}
       </div>
     </section>
@@ -120,6 +171,9 @@ export default function LeaderboardBoard({
   const [data, setData] = useState<BoardPayload | null>(initialData);
   const [isOffline, setIsOffline] = useState(!initialData && !!initialError);
   const inFlightController = useRef<AbortController | null>(null);
+  const logoRef = useRef<HTMLImageElement>(null);
+  const [logoReservePx, setLogoReservePx] = useState(LOGO_RESERVE_FALLBACK_PX);
+  const [rotationTick, setRotationTick] = useState(0);
 
   const refresh = useCallback(async () => {
     inFlightController.current?.abort();
@@ -159,32 +213,64 @@ export default function LeaderboardBoard({
     return () => clearTimeout(timeoutId);
   }, []);
 
+  useEffect(() => {
+    const intervalId = setInterval(() => setRotationTick((tick) => tick + 1), ROTATE_MS);
+    return () => clearInterval(intervalId);
+  }, []);
+
+  useEffect(() => {
+    const logoEl = logoRef.current;
+    if (!logoEl) return;
+    const observer = new ResizeObserver(([entry]) => {
+      setLogoReservePx(Math.ceil(entry.contentRect.width) + LOGO_RESERVE_GAP_PX);
+    });
+    observer.observe(logoEl);
+    return () => observer.disconnect();
+  }, []);
+
   const categories = data?.categories ?? [];
 
   return (
-    <div className="kiosk-board flex flex-col gap-4 bg-[#0b0d12] p-6">
-      <main
-        className="grid min-h-0 flex-1 gap-4"
-        style={{ gridTemplateRows: `repeat(${Math.max(categories.length, 1)}, minmax(0, 1fr))` }}
-      >
-        {categories.length === 0 ? (
-          <div className="flex items-center justify-center text-2xl font-bold text-slate-500">
-            {initialError ?? "No categories configured yet"}
-          </div>
-        ) : (
-          categories.map((category) => <CategoryBlock key={category.id} category={category} />)
-        )}
-      </main>
+    <div className="kiosk-board bg-[#0b0d12]">
+      {/* eslint-disable-next-line @next/next/no-img-element -- fixed-viewport kiosk display, not a page that benefits from next/image's responsive srcset */}
+      <img
+        ref={logoRef}
+        src="/PaxsonGameSign_transparent.png"
+        alt="Paxson Game Room"
+        className="pointer-events-none absolute top-0 right-0 z-10 h-32 w-auto object-contain md:h-40 lg:h-48"
+      />
 
-      <footer className="flex shrink-0 items-center justify-between px-1 text-sm text-slate-500 md:text-base">
-        <span className="font-semibold tracking-wide uppercase">Game Room Leaderboard</span>
-        <span className="flex items-center gap-2 tabular-nums">
-          <span
-            className={`h-2 w-2 rounded-full ${isOffline ? "bg-red-500" : "bg-emerald-500"}`}
-          />
-          {data ? `Last updated ${formatTime(data.updatedAt)}` : "Waiting for data…"}
-        </span>
-      </footer>
+      <div className="flex h-full flex-col gap-4 p-6">
+        <main
+          className="grid min-h-0 flex-1 gap-4"
+          style={{ gridTemplateRows: `repeat(${Math.max(categories.length, 1)}, minmax(0, 1fr))` }}
+        >
+          {categories.length === 0 ? (
+            <div className="flex items-center justify-center text-2xl font-bold text-slate-500">
+              {initialError ?? "No categories configured yet"}
+            </div>
+          ) : (
+            categories.map((category, index) => (
+              <CategoryBlock
+                key={category.id}
+                category={category}
+                cornerReservePx={index === 0 ? logoReservePx : undefined}
+                rotationTick={rotationTick}
+              />
+            ))
+          )}
+        </main>
+
+        <footer className="flex shrink-0 items-center justify-between px-1 text-sm text-slate-500 md:text-base">
+          <span className="font-semibold tracking-wide uppercase">Game Room Leaderboard</span>
+          <span className="flex items-center gap-2 tabular-nums">
+            <span
+              className={`h-2 w-2 rounded-full ${isOffline ? "bg-red-500" : "bg-emerald-500"}`}
+            />
+            {data ? `Last updated ${formatTime(data.updatedAt)}` : "Waiting for data…"}
+          </span>
+        </footer>
+      </div>
     </div>
   );
 }
