@@ -36,6 +36,26 @@ export interface LeaderboardRow {
   created_at: string;
 }
 
+export interface HeartbeatRow {
+  id: boolean;
+  beat_at: string;
+  source: string | null;
+  updated_at: string;
+}
+
+// -- Heartbeat status (GET/POST /api/heartbeat) ----------------------------
+
+export interface HeartbeatStatus {
+  /** ISO timestamp of the most recent heartbeat, or null if none recorded. */
+  beatAt: string | null;
+  source: string | null;
+  /** Age of the latest heartbeat in ms at response time, or null if none. */
+  ageMs: number | null;
+  /** True when the latest heartbeat is older than `staleAfterMs`. */
+  stale: boolean;
+  staleAfterMs: number;
+}
+
 // -- Board payload (GET /api/leaderboard) -----------------------------------
 
 export interface BoardEntry {

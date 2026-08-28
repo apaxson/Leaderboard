@@ -1,12 +1,14 @@
 import { getBoardPayload } from "@/lib/leaderboard";
+import { getHeartbeat } from "@/lib/heartbeat";
 import LeaderboardBoard from "@/components/LeaderboardBoard";
-import type { BoardPayload } from "@/lib/types";
+import type { BoardPayload, HeartbeatStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   let initialData: BoardPayload | null = null;
   let initialError: string | null = null;
+  let initialHeartbeat: HeartbeatStatus | null = null;
 
   try {
     initialData = await getBoardPayload();
@@ -16,5 +18,17 @@ export default async function HomePage() {
       error instanceof Error ? error.message : "Failed to load leaderboard data";
   }
 
-  return <LeaderboardBoard initialData={initialData} initialError={initialError} />;
+  try {
+    initialHeartbeat = await getHeartbeat();
+  } catch (error) {
+    console.error("Failed to load initial heartbeat", error);
+  }
+
+  return (
+    <LeaderboardBoard
+      initialData={initialData}
+      initialError={initialError}
+      initialHeartbeat={initialHeartbeat}
+    />
+  );
 }

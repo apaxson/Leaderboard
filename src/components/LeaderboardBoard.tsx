@@ -1,11 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { BoardCategory, BoardGame, BoardPayload } from "@/lib/types";
+import type { BoardCategory, BoardGame, BoardPayload, HeartbeatStatus } from "@/lib/types";
 
 const REFRESH_MS = 20_000;
 const FETCH_TIMEOUT_MS = 10_000;
 const ROTATE_MS = 10_000;
+// How often the footer re-checks POST /api/heartbeat, and how old the latest
+// beat may be before the footer shows a red sync error. Must match
+// HEARTBEAT_STALE_MS in src/lib/heartbeat.ts.
+const HEARTBEAT_POLL_MS = 15_000;
+const HEARTBEAT_STALE_MS = 90_000;
+// Cadence for locally re-deriving heartbeat staleness between polls, so the
+// error still appears if the poll itself stalls.
+const HEARTBEAT_TICK_MS = 5_000;
 // Max games shown at once per category. Table Games (5) and Card Games (3)
 // never exceed this, so they never rotate; Pinball grows dynamically as
 // machines are played, so once it passes this it starts paging.
@@ -164,9 +172,11 @@ function CategoryBlock({
 export default function LeaderboardBoard({
   initialData,
   initialError,
+  initialHeartbeat,
 }: {
   initialData: BoardPayload | null;
   initialError: string | null;
+  initialHeartbeat: HeartbeatStatus | null;
 }) {
   const [data, setData] = useState<BoardPayload | null>(initialData);
   const [isOffline, setIsOffline] = useState(!initialData && !!initialError);
@@ -174,6 +184,14 @@ export default function LeaderboardBoard({
   const logoRef = useRef<HTMLImageElement>(null);
   const [logoReservePx, setLogoReservePx] = useState(LOGO_RESERVE_FALLBACK_PX);
   const [rotationTick, setRotationTick] = useState(0);
+  const [heartbeatAt, setHeartbeatAt] = useState<string | null>(
+    initialHeartbeat?.beatAt ?? null
+  );
+  // Seeded from the server so the first client render matches; thereafter
+  // updated by the poll and re-derived locally by the tick effect below.
+  const [heartbeatStale, setHeartbeatStale] = useState(
+    initialHeartbeat?.stale ?? true
+  );
 
   const refresh = useCallback(async () => {
     inFlightController.current?.abort();
@@ -217,6 +235,35 @@ export default function LeaderboardBoard({
     const intervalId = setInterval(() => setRotationTick((tick) => tick + 1), ROTATE_MS);
     return () => clearInterval(intervalId);
   }, []);
+
+  const refreshHeartbeat = useCallback(async () => {
+    try {
+      const res = await fetch("/api/heartbeat", { cache: "no-store" });
+      if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+      const status = (await res.json()) as { beatAt: string | null; stale: boolean };
+      setHeartbeatAt(status.beatAt);
+      setHeartbeatStale(status.stale);
+    } catch (error) {
+      console.error("Failed to refresh heartbeat", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    const intervalId = setInterval(refreshHeartbeat, HEARTBEAT_POLL_MS);
+    return () => clearInterval(intervalId);
+  }, [refreshHeartbeat]);
+
+  // Re-derive staleness between polls so the sync error still appears (and
+  // clears) on time even if a poll is delayed.
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      const stale =
+        heartbeatAt === null ||
+        Date.now() - new Date(heartbeatAt).getTime() > HEARTBEAT_STALE_MS;
+      setHeartbeatStale((prev) => (prev === stale ? prev : stale));
+    }, HEARTBEAT_TICK_MS);
+    return () => clearInterval(intervalId);
+  }, [heartbeatAt]);
 
   useEffect(() => {
     const logoEl = logoRef.current;
@@ -263,11 +310,19 @@ export default function LeaderboardBoard({
 
         <footer className="flex shrink-0 items-center justify-between px-1 text-sm text-slate-500 md:text-base">
           <span className="font-semibold tracking-wide uppercase">Game Room Leaderboard</span>
-          <span className="flex items-center gap-2 tabular-nums">
-            <span
-              className={`h-2 w-2 rounded-full ${isOffline ? "bg-red-500" : "bg-emerald-500"}`}
-            />
-            {data ? `Last updated ${formatTime(data.updatedAt)}` : "Waiting for data…"}
+          <span className="flex items-center gap-4">
+            {heartbeatStale && (
+              <span className="flex items-center gap-2 font-bold uppercase tracking-wide text-red-500">
+                <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
+                Pinball Sync Error
+              </span>
+            )}
+            <span className="flex items-center gap-2 tabular-nums">
+              <span
+                className={`h-2 w-2 rounded-full ${isOffline ? "bg-red-500" : "bg-emerald-500"}`}
+              />
+              {data ? `Last updated ${formatTime(data.updatedAt)}` : "Waiting for data…"}
+            </span>
           </span>
         </footer>
       </div>

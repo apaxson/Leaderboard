@@ -4,7 +4,7 @@ A kiosk-style leaderboard for a 32" TV, built with Next.js (App Router), Tailwin
 
 - **`/`** — the full-screen TV board. Dark theme, no scrollbars, auto-refreshes every 20s, and force-reloads once a day (4 AM local) to bound any long-running browser memory growth.
 - **`/admin`** — password-protected CRUD UI for categories, games, players, and scores.
-- **`/api/leaderboard`**, **`/api/addScore`**, **`/api/addPinballScore`** — the public API surface (see below).
+- **`/api/leaderboard`**, **`/api/addScore`**, **`/api/addPinballScore`**, **`/api/refreshPinballScore`**, **`/api/heartbeat`** — the public API surface (see below).
 
 ## 1. Set up Supabase
 
@@ -80,6 +80,29 @@ Submits a score for a **walk-up guest** on a pinball machine. If the named machi
 { "gameName": "Medieval Madness", "customUsername": "Guest 1", "score": 12 }
 ```
 `gameNameId` may be used instead of `gameName` to target an existing machine. Returns `201 { entry, game }`.
+
+### `POST /api/refreshPinballScore`
+Wipes **every** existing score for one pinball machine and replaces it with the full list provided — for resyncing a machine's whole scoreboard at once (e.g. from an external tracker), rather than adding one new score at a time.
+```json
+{
+  "gameName": "Medieval Madness",
+  "scores": [
+    { "customUsername": "Alex", "score": 12 },
+    { "customUsername": "Jordan", "score": 9 }
+  ]
+}
+```
+`gameNameId` may be used instead of `gameName`; the machine is auto-created if it doesn't exist yet, same as `/api/addPinballScore`. `scores` may be an empty array to just clear the machine. Returns `200 { game, deletedCount, entries }`.
+
+### `POST /api/heartbeat`
+Records the latest "the score feed is alive" timestamp. Send an empty body to stamp the server's `now()`, or pass a specific moment:
+```json
+{ "timestamp": "2026-08-28T14:00:00Z", "source": "pinball-sync" }
+```
+Both fields are optional. Returns `200 { beatAt, source, ageMs, stale, staleAfterMs }`.
+
+### `GET /api/heartbeat`
+Returns the same `{ beatAt, source, ageMs, stale, staleAfterMs }` shape for the latest heartbeat. The board polls this every 15s and shows a red **Pinball Sync Error** in the footer once the latest beat is more than 90 seconds old (`staleAfterMs`).
 
 ## Admin (`/admin`)
 
