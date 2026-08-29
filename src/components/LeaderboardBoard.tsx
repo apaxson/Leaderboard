@@ -102,7 +102,9 @@ function GameCard({ game }: { game: BoardGame }) {
 const LOGO_RESERVE_GAP_PX = 24;
 // Conservative guess used for the first paint, before the logo has loaded
 // and been measured -- refined immediately after via ResizeObserver.
-const LOGO_RESERVE_FALLBACK_PX = 360;
+// Roughly the logo's rendered width at lg (h-64 -> ~468px wide for the
+// 640x350 asset) plus LOGO_RESERVE_GAP_PX.
+const LOGO_RESERVE_FALLBACK_PX = 490;
 
 function CategoryBlock({
   category,
@@ -284,7 +286,7 @@ export default function LeaderboardBoard({
         ref={logoRef}
         src="/PaxsonGameSign_transparent.png"
         alt="Paxson Game Room"
-        className="pointer-events-none absolute top-0 right-0 z-10 h-32 w-auto object-contain md:h-40 lg:h-48"
+        className="pointer-events-none absolute top-0 right-0 z-10 h-40 w-auto object-contain md:h-52 lg:h-64"
       />
 
       <div className="flex h-full flex-col gap-4 p-6">
@@ -309,7 +311,10 @@ export default function LeaderboardBoard({
         </main>
 
         <footer className="flex shrink-0 items-center justify-between px-1 text-sm text-slate-500 md:text-base">
-          <span className="font-semibold tracking-wide uppercase">Game Room Leaderboard</span>
+          <span className="flex flex-col">
+            <span className="font-semibold tracking-wide uppercase">Game Room Leaderboard</span>
+            <span className="text-xs text-slate-600 md:text-sm">© 2026 PaxTech Galactic Enterprises</span>
+          </span>
           <span className="flex items-center gap-4">
             {heartbeatStale && (
               <span className="flex items-center gap-2 font-bold uppercase tracking-wide text-red-500">
