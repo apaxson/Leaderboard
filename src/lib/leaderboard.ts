@@ -7,17 +7,33 @@ import type {
   GameCategoryRow,
   GameNameRow,
   LeaderboardRow,
+  TimeWindow,
   UserRow,
 } from "@/lib/types";
+import { TIME_WINDOW_DAYS } from "@/lib/types";
+
+/**
+ * ISO timestamp marking the start of a bounded time window, or null for
+ * "all" (no lower bound). Used to filter leaderboard rows by `created_at`.
+ */
+function windowCutoffIso(window: TimeWindow): string | null {
+  if (window === "all") return null;
+  const days = TIME_WINDOW_DAYS[window];
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+}
 
 /**
  * Builds the full TV-board payload: every active category, every active game
  * within it, and each game's top N entries (ranked per its own sort
  * direction). Shared by GET /api/leaderboard and the server-rendered home
  * page so the kiosk's first paint doesn't need an extra network round trip.
+ *
+ * `interval` bounds which scores count by their `created_at`: "all" (default)
+ * includes every entry, "7d" / "3d" only the last 7 / 3 days.
  */
-export async function getBoardPayload(): Promise<BoardPayload> {
+export async function getBoardPayload(interval: TimeWindow = "all"): Promise<BoardPayload> {
   const supabase = getSupabaseAdmin();
+  const cutoffIso = windowCutoffIso(interval);
 
   const [{ data: categories, error: categoriesError }, { data: games, error: gamesError }] =
     await Promise.all([
@@ -44,12 +60,14 @@ export async function getBoardPayload(): Promise<BoardPayload> {
   let users: UserRow[] = [];
 
   if (gameIds.length > 0) {
-    const { data: lbRows, error: lbError } = await supabase
+    let lbQuery = supabase
       .from("leaderboard")
       .select("*")
       .in("game_name_id", gameIds)
-      .order("created_at", { ascending: true })
-      .returns<LeaderboardRow[]>();
+      .order("created_at", { ascending: true });
+    if (cutoffIso) lbQuery = lbQuery.gte("created_at", cutoffIso);
+
+    const { data: lbRows, error: lbError } = await lbQuery.returns<LeaderboardRow[]>();
     if (lbError) throw lbError;
     leaderboardRows = lbRows ?? [];
 
@@ -126,6 +144,7 @@ export async function getBoardPayload(): Promise<BoardPayload> {
 
   return {
     updatedAt: new Date().toISOString(),
+    interval,
     categories: boardCategories,
   };
 }

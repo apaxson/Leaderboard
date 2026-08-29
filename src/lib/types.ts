@@ -1,5 +1,28 @@
 export type SortDirection = "asc" | "desc";
 
+// -- Time window filter (Leaderboard display) ------------------------------
+
+/** Time range the board is filtered to, by leaderboard `created_at`. */
+export type TimeWindow = "all" | "7d" | "3d";
+
+export const TIME_WINDOWS: readonly TimeWindow[] = ["all", "7d", "3d"] as const;
+
+export const TIME_WINDOW_LABELS: Record<TimeWindow, string> = {
+  all: "All Time",
+  "7d": "Last 7 Days",
+  "3d": "Last 3 Days",
+};
+
+/** Days each bounded window spans; `all` has no cutoff. */
+export const TIME_WINDOW_DAYS: Record<Exclude<TimeWindow, "all">, number> = {
+  "7d": 7,
+  "3d": 3,
+};
+
+export function isTimeWindow(value: unknown): value is TimeWindow {
+  return typeof value === "string" && (TIME_WINDOWS as readonly string[]).includes(value);
+}
+
 export interface GameCategoryRow {
   id: string;
   name: string;
@@ -84,5 +107,7 @@ export interface BoardCategory {
 
 export interface BoardPayload {
   updatedAt: string;
+  /** Time interval this payload was filtered to. */
+  interval: TimeWindow;
   categories: BoardCategory[];
 }

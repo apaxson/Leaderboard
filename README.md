@@ -2,7 +2,7 @@
 
 A kiosk-style leaderboard for a 32" TV, built with Next.js (App Router), Tailwind CSS, and Supabase. Designed to run 24/7 on a Raspberry Pi browser.
 
-- **`/`** — the full-screen TV board. Dark theme, no scrollbars, auto-refreshes every 20s, and force-reloads once a day (4 AM local) to bound any long-running browser memory growth.
+- **`/`** — the full-screen TV board. Dark theme, no scrollbars, auto-refreshes every 20s, and force-reloads once a day (4 AM local) to bound any long-running browser memory growth. A footer control switches the **time interval** (All Time / Last 7 Days / Last 3 Days); it can also be set from the URL — see [Time interval](#time-interval).
 - **`/admin`** — password-protected CRUD UI for categories, games, players, and scores.
 - **`/api/leaderboard`**, **`/api/addScore`**, **`/api/addPinballScore`**, **`/api/refreshPinballScore`**, **`/api/heartbeat`** — the public API surface (see below).
 
@@ -62,10 +62,30 @@ Ranking per the spec is entirely data-driven via `game_names.sort_direction` / `
 
 Adjust any of this later from `/admin` → Games (or add new categories/games entirely) — the board reflects it immediately.
 
+## Time interval
+
+The board can be filtered to a rolling time window based on each score's `created_at`:
+
+| Interval | `interval` value | Meaning |
+|---|---|---|
+| All Time | `all` *(default)* | Every entry, no lower bound. |
+| Last 7 Days | `7d` | Scores from the last 7 × 24 h. |
+| Last 3 Days | `3d` | Scores from the last 3 × 24 h. |
+
+Only the entries inside the window are ranked, so a game's top N reflects just that period.
+
+**Setting it:**
+
+- **Footer control** on `/` — clicking a range refetches immediately and rewrites the URL (`?interval=7d`, or the param is dropped for `all`) so the choice survives the daily reload and can be bookmarked or shared.
+- **URL parameter** — load `/?interval=7d` (or `3d`, or `all`) to start on that interval. This is the value the kiosk should be pointed at if you want it to boot into a specific window. An unknown or missing value falls back to `all`.
+- **API** — `GET /api/leaderboard?interval=7d` returns the same filtered payload (see below).
+
 ## API
 
 ### `GET /api/leaderboard`
-Returns every category, its games, and each game's top N entries (ranked per that game's `sort_direction`), plus an `updatedAt` timestamp. Powers both the board's initial server render and its polling refresh.
+Returns every category, its games, and each game's top N entries (ranked per that game's `sort_direction`), plus an `updatedAt` timestamp and the `interval` the payload was filtered to. Powers both the board's initial server render and its polling refresh.
+
+Optional query param `?interval=` — `all` (default), `7d`, or `3d` — filters entries by `created_at` to that rolling window before ranking (see [Time interval](#time-interval)). Unknown values fall back to `all`.
 
 ### `POST /api/addScore`
 Submits a score for a **registered** player against an existing game.
@@ -117,6 +137,6 @@ Once in, four tabs give full CRUD over categories, games, users, and scores — 
 
 ## Kiosk deployment notes
 
-- Point the Pi's browser (Chromium in kiosk mode) at `/`, e.g. `chromium-browser --kiosk --noerrdialogs --disable-session-crashed-bubble http://<host>:3000`.
+- Point the Pi's browser (Chromium in kiosk mode) at `/`, e.g. `chromium-browser --kiosk --noerrdialogs --disable-session-crashed-bubble http://<host>:3000`. Append `?interval=7d` (or `3d`) to the URL to boot into a specific [time interval](#time-interval) instead of All Time.
 - The board force-reloads once daily at 4 AM to bound memory growth from a browser tab that's open for weeks; adjust `DAILY_RELOAD_HOUR` in `src/components/LeaderboardBoard.tsx` if the game room is used around the clock.
 - Pinball cards lay out across the category row automatically; if you accumulate many machines, use `/admin` → Games to set stale ones `is_active = false` so the board keeps fitting a 1080p screen without scrolling.

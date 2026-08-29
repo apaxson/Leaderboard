@@ -1,7 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { BoardCategory, BoardGame, BoardPayload, HeartbeatStatus } from "@/lib/types";
+import type {
+  BoardCategory,
+  BoardGame,
+  BoardPayload,
+  HeartbeatStatus,
+  TimeWindow,
+} from "@/lib/types";
+import { TIME_WINDOWS, TIME_WINDOW_LABELS } from "@/lib/types";
 
 const REFRESH_MS = 20_000;
 const FETCH_TIMEOUT_MS = 10_000;
@@ -175,13 +182,21 @@ export default function LeaderboardBoard({
   initialData,
   initialError,
   initialHeartbeat,
+  initialInterval = "all",
 }: {
   initialData: BoardPayload | null;
   initialError: string | null;
   initialHeartbeat: HeartbeatStatus | null;
+  /** Time interval to start on, resolved from the `?interval=` URL param. */
+  initialInterval?: TimeWindow;
 }) {
   const [data, setData] = useState<BoardPayload | null>(initialData);
   const [isOffline, setIsOffline] = useState(!initialData && !!initialError);
+  // Time range the board is filtered to, by score `created_at`. Seeded from
+  // the `?interval=` URL param (defaults to "all" — every entry).
+  const [selectedInterval, setSelectedInterval] = useState<TimeWindow>(
+    initialData?.interval ?? initialInterval
+  );
   const inFlightController = useRef<AbortController | null>(null);
   const logoRef = useRef<HTMLImageElement>(null);
   const [logoReservePx, setLogoReservePx] = useState(LOGO_RESERVE_FALLBACK_PX);
@@ -202,7 +217,7 @@ export default function LeaderboardBoard({
     const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
     try {
-      const res = await fetch("/api/leaderboard", {
+      const res = await fetch(`/api/leaderboard?interval=${selectedInterval}`, {
         cache: "no-store",
         signal: controller.signal,
       });
@@ -218,7 +233,7 @@ export default function LeaderboardBoard({
     } finally {
       clearTimeout(timeoutId);
     }
-  }, []);
+  }, [selectedInterval]);
 
   useEffect(() => {
     const intervalId = setInterval(refresh, REFRESH_MS);
@@ -227,6 +242,22 @@ export default function LeaderboardBoard({
       inFlightController.current?.abort();
     };
   }, [refresh]);
+
+  // When the operator switches the interval, refetch right away (rather than
+  // waiting for the next poll) and reflect the choice in the URL so it
+  // survives a reload and can be shared/bookmarked.
+  const isFirstIntervalRender = useRef(true);
+  useEffect(() => {
+    if (isFirstIntervalRender.current) {
+      isFirstIntervalRender.current = false;
+      return;
+    }
+    const url = new URL(window.location.href);
+    if (selectedInterval === "all") url.searchParams.delete("interval");
+    else url.searchParams.set("interval", selectedInterval);
+    window.history.replaceState(null, "", url);
+    refresh();
+  }, [selectedInterval, refresh]);
 
   useEffect(() => {
     const timeoutId = setTimeout(() => window.location.reload(), msUntilNextReload());
@@ -314,6 +345,27 @@ export default function LeaderboardBoard({
           <span className="flex flex-col">
             <span className="font-semibold tracking-wide uppercase">Game Room Leaderboard</span>
             <span className="text-xs text-slate-600 md:text-sm">© 2026 PaxTech Galactic Enterprises</span>
+          </span>
+          <span
+            className="flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.03] p-1"
+            role="group"
+            aria-label="Time range"
+          >
+            {TIME_WINDOWS.map((win) => (
+              <button
+                key={win}
+                type="button"
+                onClick={() => setSelectedInterval(win)}
+                aria-pressed={selectedInterval === win}
+                className={`rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide transition-colors md:text-sm ${
+                  selectedInterval === win
+                    ? "bg-white text-slate-900"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                {TIME_WINDOW_LABELS[win]}
+              </button>
+            ))}
           </span>
           <span className="flex items-center gap-4">
             {heartbeatStale && (
