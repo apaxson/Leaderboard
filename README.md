@@ -46,7 +46,7 @@ npm run build && npm start   # production
 | `users` | Registered household/regular players. |
 | `leaderboard` | One row per score. Either `user_id` **or** `custom_username` is set (never neither) — pinball walk-up guests use `custom_username` and skip the `users` table entirely. `game_category_id` is denormalized onto the row for simple filtering. |
 
-Ranking per the spec is entirely data-driven via `game_names.sort_direction` / `top_n`, not hardcoded:
+Ranking per the spec is entirely data-driven via `game_names.sort_direction` / `top_n`, not hardcoded. Note that for Table Games and Card Games the ranked value is each player's **summed** score over the selected time window, not a single entry — see [Time interval](#time-interval):
 
 | Category | Game | Ranking | Shown |
 |---|---|---|---|
@@ -73,6 +73,8 @@ The board can be filtered to a rolling time window based on each score's `create
 | Last 3 Days | `3d` | Scores from the last 3 × 24 h. |
 
 Only the entries inside the window are ranked, so a game's top N reflects just that period.
+
+**Table Games and Card Games are additive over the window:** each player gets a single row whose score is the **sum** of all their scores for that game in the selected period, then ranked per the game's `sort_direction`. Switching to Last 7 / 3 Days narrows which scores are summed. **Pinball is unchanged** — it still ranks individual attempts (best single score). The additive categories are matched by slug (`table`, `cards`) in `ADDITIVE_CATEGORY_SLUGS` in `src/lib/leaderboard.ts`.
 
 **Setting it:**
 

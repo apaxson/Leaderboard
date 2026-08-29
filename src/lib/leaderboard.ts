@@ -23,6 +23,15 @@ function windowCutoffIso(window: TimeWindow): string | null {
 }
 
 /**
+ * Categories whose board entries are *additive*: instead of one row per
+ * individual score, each player gets a single entry whose value is the sum
+ * of all their scores in the selected time window, then ranked per the
+ * game's `sort_direction`. Pinball stays per-attempt (best single score).
+ * Matches the category slugs the board component styles by name.
+ */
+const ADDITIVE_CATEGORY_SLUGS = new Set(["table", "cards"]);
+
+/**
  * Builds the full TV-board payload: every active category, every active game
  * within it, and each game's top N entries (ranked per its own sort
  * direction). Shared by GET /api/leaderboard and the server-rendered home
@@ -30,6 +39,10 @@ function windowCutoffIso(window: TimeWindow): string | null {
  *
  * `interval` bounds which scores count by their `created_at`: "all" (default)
  * includes every entry, "7d" / "3d" only the last 7 / 3 days.
+ *
+ * Table Games and Card Games are ranked *additively* over that window — each
+ * player's entry is the sum of their scores in the period (see
+ * `ADDITIVE_CATEGORY_SLUGS`). Pinball keeps per-attempt high scores.
  */
 export async function getBoardPayload(interval: TimeWindow = "all"): Promise<BoardPayload> {
   const supabase = getSupabaseAdmin();
@@ -102,25 +115,67 @@ export async function getBoardPayload(interval: TimeWindow = "all"): Promise<Boa
 
   const boardCategories: BoardCategory[] = (categories ?? []).map((category) => {
     const categoryGames = gamesByCategory.get(category.id) ?? [];
+    const additive = ADDITIVE_CATEGORY_SLUGS.has(category.slug);
 
     const boardGames: BoardGame[] = categoryGames.map((game) => {
-      const rows = [...(rowsByGame.get(game.id) ?? [])];
-      rows.sort((a, b) =>
+      const rows = rowsByGame.get(game.id) ?? [];
+
+      const resolveName = (row: LeaderboardRow) =>
+        row.custom_username ?? userNameById.get(row.user_id ?? "") ?? "Unknown";
+
+      type RankedEntry = {
+        id: string;
+        displayName: string;
+        score: number;
+        createdAt: string;
+      };
+      let ranked: RankedEntry[];
+
+      if (additive) {
+        // One entry per player: the sum of every score they posted for this
+        // game inside the selected window. `createdAt` tracks their most
+        // recent contributing score.
+        const byPlayer = new Map<string, RankedEntry>();
+        for (const row of rows) {
+          const key = row.user_id ?? `custom:${row.custom_username ?? ""}`;
+          const existing = byPlayer.get(key);
+          if (existing) {
+            existing.score += row.score;
+            if (row.created_at > existing.createdAt) existing.createdAt = row.created_at;
+          } else {
+            byPlayer.set(key, {
+              id: key,
+              displayName: resolveName(row),
+              score: row.score,
+              createdAt: row.created_at,
+            });
+          }
+        }
+        ranked = Array.from(byPlayer.values());
+      } else {
+        ranked = rows.map((row) => ({
+          id: row.id,
+          displayName: resolveName(row),
+          score: row.score,
+          createdAt: row.created_at,
+        }));
+      }
+
+      ranked.sort((a, b) =>
         game.sort_direction === "asc" ? a.score - b.score : b.score - a.score
       );
 
       const entries = Array.from({ length: game.top_n }, (_, i) => {
-        const row = rows[i];
-        if (!row) {
+        const entry = ranked[i];
+        if (!entry) {
           return { rank: i + 1, id: null, displayName: null, score: null, createdAt: null };
         }
-        const displayName = row.custom_username ?? userNameById.get(row.user_id ?? "") ?? "Unknown";
         return {
           rank: i + 1,
-          id: row.id,
-          displayName,
-          score: row.score,
-          createdAt: row.created_at,
+          id: entry.id,
+          displayName: entry.displayName,
+          score: entry.score,
+          createdAt: entry.createdAt,
         };
       });
 
