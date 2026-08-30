@@ -21,10 +21,19 @@ const HEARTBEAT_STALE_MS = 90_000;
 // Cadence for locally re-deriving heartbeat staleness between polls, so the
 // error still appears if the poll itself stalls.
 const HEARTBEAT_TICK_MS = 5_000;
-// Max games shown at once per category. Table Games (5) and Card Games (3)
-// never exceed this, so they never rotate; Pinball grows dynamically as
-// machines are played, so once it passes this it starts paging.
-const GAMES_PER_PAGE = 5;
+// How many game cards fit on one page is measured at runtime from the actual
+// category-box width (see CategoryBlock): we show as many cards as keep each
+// one at least MIN_CARD_WIDTH_PX wide, so the player name and score always
+// have room and never get clipped. A category with more games than fit slides
+// to the next page every ROTATE_MS. The first category shares its row with the
+// logo, so it measures narrower and pages sooner -- that falls out of
+// measuring content width and needs no special case.
+const MIN_CARD_WIDTH_PX = 380;
+// Matches the `gap-3` (0.75rem) between cards in the grid below.
+const CARD_GAP_PX = 12;
+// Used only for the server render and the first client paint, before the
+// effect below measures the real width.
+const FALLBACK_PER_PAGE = 4;
 // Kiosk browsers run for weeks at a time; forcing a full page reload once a
 // day at an off-peak hour bounds any memory/DOM growth the tab accumulates,
 // independent of how careful the polling code below is.
@@ -72,7 +81,7 @@ function GameCard({ game }: { game: BoardGame }) {
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-white/5 bg-black/30">
       <div className="shrink-0 border-b border-white/5 px-4 py-2">
-        <h3 className="truncate text-lg font-bold uppercase tracking-wide text-slate-200 md:text-xl">
+        <h3 className="text-lg font-bold uppercase leading-tight tracking-wide text-slate-200 [overflow-wrap:anywhere] md:text-xl">
           {game.name}
         </h3>
       </div>
@@ -80,9 +89,9 @@ function GameCard({ game }: { game: BoardGame }) {
         {game.entries.map((entry) => (
           <li
             key={entry.rank}
-            className="flex flex-1 items-center justify-between gap-3 border-b border-white/5 px-4 last:border-b-0"
+            className="flex flex-1 flex-wrap items-center justify-between gap-x-3 gap-y-0.5 border-b border-white/5 px-4 last:border-b-0"
           >
-            <span className="flex min-w-0 items-center gap-3">
+            <span className="flex min-w-0 flex-1 items-baseline gap-3">
               <span
                 className={`w-6 shrink-0 text-right font-black tabular-nums ${
                   RANK_STYLES[entry.rank] ?? "text-slate-500"
@@ -90,11 +99,11 @@ function GameCard({ game }: { game: BoardGame }) {
               >
                 {entry.rank}
               </span>
-              <span className="truncate font-semibold text-slate-100">
+              <span className="font-semibold leading-tight text-slate-100 [overflow-wrap:anywhere]">
                 {entry.displayName ?? "—"}
               </span>
             </span>
-            <span className="shrink-0 font-black tabular-nums text-emerald-400">
+            <span className="ml-auto shrink-0 font-black tabular-nums text-emerald-400">
               {entry.score !== null ? formatScore(entry.score) : "—"}
             </span>
           </li>
@@ -129,15 +138,55 @@ function CategoryBlock({
   const headerPaddingRight = cornerReservePx ?? 24;
   const gridPaddingRight = cornerReservePx ?? 16;
 
-  const totalPages = Math.max(1, Math.ceil(category.games.length / GAMES_PER_PAGE));
+  // How many game cards fit on one page, measured from the games area's actual
+  // content width (which already excludes the logo reserve on the first
+  // category). We keep every card at least MIN_CARD_WIDTH_PX wide so the name
+  // and score always have room; the rest of the games slide in as extra pages.
+  const gridAreaRef = useRef<HTMLDivElement>(null);
+  const [perPage, setPerPage] = useState<number | null>(null);
+
+  useEffect(() => {
+    const el = gridAreaRef.current;
+    if (!el) return;
+    const measure = (width: number) => {
+      if (width <= 0) return; // not laid out yet -- keep the fallback
+      const fit = Math.floor((width + CARD_GAP_PX) / (MIN_CARD_WIDTH_PX + CARD_GAP_PX));
+      const next = Math.max(1, fit);
+      setPerPage((prev) => (prev === next ? prev : next));
+    };
+    const measureNow = () => {
+      const style = getComputedStyle(el);
+      measure(
+        el.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
+      );
+    };
+    // Measure straight away so the card count is right on the first client
+    // render, even in contexts where ResizeObserver notifications are throttled
+    // (e.g. a background tab). `cornerReservePx` in the deps re-measures when
+    // the logo's reserved width settles.
+    measureNow();
+    // `main` pins each category to a fixed width (see gridTemplateColumns
+    // there), so this box's width never depends on how many cards we choose to
+    // show -- the observer settles after one pass instead of looping.
+    const observer = new ResizeObserver(([entry]) => measure(entry.contentRect.width));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [cornerReservePx]);
+
+  const gamesPerPage = perPage ?? FALLBACK_PER_PAGE;
+  const totalPages = Math.max(1, Math.ceil(category.games.length / gamesPerPage));
   const page = rotationTick % totalPages;
-  const visibleGames =
-    totalPages > 1
-      ? category.games.slice(page * GAMES_PER_PAGE, page * GAMES_PER_PAGE + GAMES_PER_PAGE)
-      : category.games;
+  const pages = Array.from({ length: totalPages }, (_, i) =>
+    category.games.slice(i * gamesPerPage, i * gamesPerPage + gamesPerPage)
+  );
+
+  const gridStyle = {
+    gridTemplateColumns: `repeat(${gamesPerPage}, minmax(0, 1fr))`,
+    gridAutoRows: "1fr",
+  } as const;
 
   return (
-    <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
+    <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
       <header
         className="flex shrink-0 items-center gap-3 border-b border-white/10 py-3 pl-6"
         style={{ paddingRight: headerPaddingRight }}
@@ -159,20 +208,42 @@ function CategoryBlock({
           </span>
         )}
       </header>
+      {/* Outer box reserves the logo's width on the right (padding). The inner
+          box is the actual visible window: its own edge sits where that reserve
+          begins, so `overflow-hidden` clips the sliding track's off-screen
+          pages there instead of letting them show through under the logo. */}
       <div
-        key={page}
-        className="game-page grid flex-1 gap-3 pt-4 pb-4 pl-4"
-        style={{
-          gridTemplateColumns: `repeat(auto-fit, minmax(200px, 1fr))`,
-          gridAutoRows: "1fr",
-          paddingRight: gridPaddingRight,
-        }}
+        className="min-h-0 min-w-0 flex-1"
+        style={{ paddingRight: gridPaddingRight }}
       >
-        {visibleGames.length === 0 ? (
-          <p className="flex items-center justify-center text-slate-500">No games yet</p>
-        ) : (
-          visibleGames.map((game) => <GameCard key={game.id} game={game} />)
-        )}
+        <div
+          ref={gridAreaRef}
+          className="relative h-full overflow-hidden pt-4 pb-4 pl-4"
+        >
+          {category.games.length === 0 ? (
+            <p className="flex h-full items-center justify-center text-slate-500">No games yet</p>
+          ) : (
+            <div
+              className="game-page-track flex h-full transition-transform duration-700 ease-in-out"
+              style={{
+                width: `${totalPages * 100}%`,
+                transform: `translateX(-${(page * 100) / totalPages}%)`,
+              }}
+            >
+              {pages.map((pageGames, i) => (
+                <div
+                  key={i}
+                  className="grid h-full shrink-0 gap-3"
+                  style={{ ...gridStyle, width: `${100 / totalPages}%` }}
+                >
+                  {pageGames.map((game) => (
+                    <GameCard key={game.id} game={game} />
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </section>
   );
@@ -322,8 +393,16 @@ export default function LeaderboardBoard({
 
       <div className="flex h-full flex-col gap-4 p-6">
         <main
-          className="grid min-h-0 flex-1 gap-4"
-          style={{ gridTemplateRows: `repeat(${Math.max(categories.length, 1)}, minmax(0, 1fr))` }}
+          className="grid min-h-0 min-w-0 flex-1 gap-4"
+          style={{
+            // Explicit single column so each category's width is fixed by the
+            // grid, never derived from its contents. Without this, the
+            // percentage-width sliding track inside CategoryBlock and the
+            // column size feed back into each other (cyclic sizing) and the
+            // layout thrashes.
+            gridTemplateColumns: "minmax(0, 1fr)",
+            gridTemplateRows: `repeat(${Math.max(categories.length, 1)}, minmax(0, 1fr))`,
+          }}
         >
           {categories.length === 0 ? (
             <div className="flex items-center justify-center text-2xl font-bold text-slate-500">

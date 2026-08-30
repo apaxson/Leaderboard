@@ -37,16 +37,11 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* Gentle crossfade when a category rotates to its next page of games. */
-@keyframes game-page-fade-in {
-  from {
-    opacity: 0;
+/* Categories with more games than fit on one page slide horizontally to the
+   next page every ROTATE_MS; the transition is on the track's transform in
+   LeaderboardBoard. Respect users who ask for reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  .game-page-track {
+    transition: none !important;
   }
-  to {
-    opacity: 1;
-  }
-}
-
-.game-page {
-  animation: game-page-fade-in 500ms ease-out;
 }
