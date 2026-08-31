@@ -1,5 +1,6 @@
 import { getBoardPayload } from "@/lib/leaderboard";
 import { getHeartbeat } from "@/lib/heartbeat";
+import { getBoardLanUrl } from "@/lib/serverUrl";
 import LeaderboardBoard from "@/components/LeaderboardBoard";
 import { isTimeWindow } from "@/lib/types";
 import type { BoardPayload, HeartbeatStatus } from "@/lib/types";
@@ -38,6 +39,7 @@ export default async function HomePage({
       initialError={initialError}
       initialHeartbeat={initialHeartbeat}
       initialInterval={interval}
+      boardUrl={getBoardLanUrl()}
     />
   );
 }

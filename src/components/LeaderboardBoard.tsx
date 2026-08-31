@@ -254,12 +254,15 @@ export default function LeaderboardBoard({
   initialError,
   initialHeartbeat,
   initialInterval = "all",
+  boardUrl,
 }: {
   initialData: BoardPayload | null;
   initialError: string | null;
   initialHeartbeat: HeartbeatStatus | null;
   /** Time interval to start on, resolved from the `?interval=` URL param. */
   initialInterval?: TimeWindow;
+  /** LAN URL for this board, resolved server-side (system IP, not localhost). */
+  boardUrl?: string;
 }) {
   const [data, setData] = useState<BoardPayload | null>(initialData);
   const [isOffline, setIsOffline] = useState(!initialData && !!initialError);
@@ -424,6 +427,9 @@ export default function LeaderboardBoard({
           <span className="flex flex-col">
             <span className="font-semibold tracking-wide uppercase">Game Room Leaderboard</span>
             <span className="text-xs text-slate-600 md:text-sm">© 2026 PaxTech Galactic Quadrant Enterprises and Syndicate</span>
+            {boardUrl && (
+              <span className="text-[0.65rem] text-slate-600 md:text-xs">{boardUrl}</span>
+            )}
           </span>
           <span
             className="flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.03] p-1"
