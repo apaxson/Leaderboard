@@ -21,7 +21,6 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ADMIN_PASSWORD=a-real-password
 ADMIN_SESSION_TOKEN=$(openssl rand -hex 32)
-ADMIN_ALLOWED_CIDRS=10.0.0.0/22
 ```
 
 `SUPABASE_SERVICE_ROLE_KEY` and `ADMIN_SESSION_TOKEN` are secrets — never commit `.env.local` (it's already gitignored) and never expose them to the browser.
@@ -128,14 +127,13 @@ Returns the same `{ beatAt, source, ageMs, stale, staleAfterMs }` shape for the 
 
 ## Admin (`/admin`)
 
-Two layers, both enforced in `src/proxy.ts` (Next.js 16's `middleware.ts` successor), before any request reaches a page or API route:
+Enforced in `src/proxy.ts` (Next.js 16's `middleware.ts` successor), before any request reaches a page or API route:
 
-1. **Network allowlist.** The entire `/admin` surface — including the login page itself — is restricted to the CIDR ranges in `ADMIN_ALLOWED_CIDRS` (default `10.0.0.0/22`, i.e. `10.0.0.0`–`10.0.3.255`). Anything outside that range gets a `403` before it can even see the login form. Multiple ranges can be comma-separated (e.g. to also allow a VPN subnet).
-2. **Password.** Once past the network check, an httpOnly session cookie (set on successful `POST /api/admin/login`, checked against `ADMIN_SESSION_TOKEN`) gates everything else.
+**Password.** An httpOnly session cookie (set on successful `POST /api/admin/login`, checked against `ADMIN_SESSION_TOKEN`) gates the entire `/admin` surface except the login page itself.
 
 Once in, four tabs give full CRUD over categories, games, users, and scores — including correcting a bad score or retiring a pinball machine (set it inactive rather than deleting it, to keep history).
 
-> **Caveat:** the network check reads the `X-Forwarded-For` header, which Next.js populates from the raw TCP connection when a request doesn't already carry that header. That's reliable as long as the Pi is directly exposed to your LAN with nothing in front of it (the standard kiosk setup — see below). If you ever put this behind a reverse proxy (or expose it beyond a trusted LAN), make sure that proxy strips any inbound `X-Forwarded-For` before setting its own, otherwise a client could forge the header to spoof its IP. Local dev note: browsing `localhost:3000/admin` shows up as `127.0.0.1`, which isn't in `10.0.0.0/22` — add `127.0.0.1/32` to `ADMIN_ALLOWED_CIDRS` in your own `.env.local` if you need admin access while developing locally.
+> **Caveat:** there is no network-level restriction on `/admin` — anyone who can reach the server can reach the login form. Keep the Pi on a trusted LAN with no port-forwarding, and use a strong `ADMIN_PASSWORD`.
 
 ## Kiosk deployment notes
 
