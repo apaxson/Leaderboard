@@ -26,7 +26,7 @@ interface SanitizedScore {
  * Body: { gameName: string, scores: [{ customUsername: string, score: number }, ...] }
  * (or { gameNameId } instead of gameName, to target an existing machine.)
  * If the named machine doesn't exist yet under Pinball, it's created
- * automatically (top 3, ascending), same as /api/addPinballScore.
+ * automatically (top 3, descending -- high score wins), same as /api/addPinballScore.
  */
 export async function POST(request: Request) {
   let body: RefreshPinballScoreBody;

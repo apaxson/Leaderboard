@@ -4,7 +4,8 @@ import type { GameCategoryRow, GameNameRow } from "@/lib/types";
 
 const PINBALL_SLUG = "pinball";
 const PINBALL_TOP_N = 3;
-const PINBALL_SORT_DIRECTION = "asc";
+// Pinball is high-score-wins: the biggest number ranks first.
+const PINBALL_SORT_DIRECTION = "desc";
 
 /** Carries the HTTP status a route should respond with for this failure. */
 export class PinballLookupError extends Error {
@@ -36,7 +37,7 @@ export async function getPinballCategory(supabase: SupabaseClient): Promise<Game
 
 /**
  * Resolves a pinball machine by id (must already exist) or by name (created
- * automatically -- top 3, ascending -- if it doesn't exist yet under
+ * automatically -- top 3, descending (high score wins) -- if it doesn't exist yet under
  * Pinball). This is how "Various Games" grows as machines are first played.
  */
 export async function findOrCreatePinballGame(
