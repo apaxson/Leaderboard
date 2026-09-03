@@ -424,9 +424,9 @@ export default function LeaderboardBoard({
         </main>
 
         <footer className="flex shrink-0 items-center justify-between px-1 text-sm text-slate-500 md:text-base">
-          <span className="flex flex-col">
+          <span className="flex flex-col pl-[25px]">
             <span className="font-semibold tracking-wide uppercase">Game Room Leaderboard</span>
-            <span className="text-xs text-slate-600 md:text-sm">© 2026 PaxTech Galactic Quadrant Enterprises and Syndicate</span>
+            <span className="text-xs text-slate-600 md:text-sm">© 2026 PaxTech Galactic Quadrant Syndicate and Alliance</span>
             {boardUrl && (
               <span className="text-[0.65rem] text-slate-600 md:text-xs">{boardUrl}</span>
             )}
@@ -452,7 +452,7 @@ export default function LeaderboardBoard({
               </button>
             ))}
           </span>
-          <span className="flex items-center gap-4">
+          <span className="flex items-center gap-4 pr-[25px]">
             {heartbeatStale && (
               <span className="flex items-center gap-2 font-bold uppercase tracking-wide text-red-500">
                 <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
