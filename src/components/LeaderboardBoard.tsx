@@ -29,6 +29,16 @@ const HEARTBEAT_TICK_MS = 5_000;
 // logo, so it measures narrower and pages sooner -- that falls out of
 // measuring content width and needs no special case.
 const MIN_CARD_WIDTH_PX = 380;
+// Per-category floor overrides. Pinball cards carry only a top-3 list and a
+// compact score, so they stay readable a bit narrower than the default -- a
+// tighter floor lets a 5th machine share the row on the 1080p board.
+const CATEGORY_MIN_CARD_WIDTH_PX: Record<string, number> = {
+  pinball: 340,
+};
+
+function minCardWidthFor(slug: string): number {
+  return CATEGORY_MIN_CARD_WIDTH_PX[slug] ?? MIN_CARD_WIDTH_PX;
+}
 // Matches the `gap-3` (0.75rem) between cards in the grid below.
 const CARD_GAP_PX = 12;
 // Used only for the server render and the first client paint, before the
@@ -144,13 +154,14 @@ function CategoryBlock({
   // and score always have room; the rest of the games slide in as extra pages.
   const gridAreaRef = useRef<HTMLDivElement>(null);
   const [perPage, setPerPage] = useState<number | null>(null);
+  const minCardWidthPx = minCardWidthFor(category.slug);
 
   useEffect(() => {
     const el = gridAreaRef.current;
     if (!el) return;
     const measure = (width: number) => {
       if (width <= 0) return; // not laid out yet -- keep the fallback
-      const fit = Math.floor((width + CARD_GAP_PX) / (MIN_CARD_WIDTH_PX + CARD_GAP_PX));
+      const fit = Math.floor((width + CARD_GAP_PX) / (minCardWidthPx + CARD_GAP_PX));
       const next = Math.max(1, fit);
       setPerPage((prev) => (prev === next ? prev : next));
     };
@@ -171,7 +182,7 @@ function CategoryBlock({
     const observer = new ResizeObserver(([entry]) => measure(entry.contentRect.width));
     observer.observe(el);
     return () => observer.disconnect();
-  }, [cornerReservePx]);
+  }, [cornerReservePx, minCardWidthPx]);
 
   const gamesPerPage = perPage ?? FALLBACK_PER_PAGE;
   const totalPages = Math.max(1, Math.ceil(category.games.length / gamesPerPage));
